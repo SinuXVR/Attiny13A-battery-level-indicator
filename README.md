@@ -1,6 +1,6 @@
 # Attiny13A based Li-ion battery level indicator
 
-![Overview](img/overview.jpg)
+![Overview](img/overview.JPG)
 
 # Features
 
