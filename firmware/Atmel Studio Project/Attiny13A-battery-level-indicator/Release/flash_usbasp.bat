@@ -1,0 +1,1 @@
+avrdude -p t13 -c usbasp -u -Uflash:w:Attiny13A-battery-level-indicator.hex:a -Ulfuse:w:0x65:m -Uhfuse:w:0xFD:m
