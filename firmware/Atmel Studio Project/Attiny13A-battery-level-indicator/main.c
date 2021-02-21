@@ -2,6 +2,7 @@
  * Chip type: Attiny13/Attiny13A
  * Clock frequency: 4.8MHz with divider
  * Fuse settings: -Ulfuse:w:0x65:m -Uhfuse:w:0xFD:m
+ * Use -Ulfuse:w:0x75:m -Uhfuse:w:0xFD:m to disable clock divider (increases PWM frequency)
  *
  * Wiring:
  *                       +--------+
@@ -35,6 +36,17 @@
 // Comment out to use single led indication mode
 #define USE_ALL_LEDS
 
+// Uncomment to enable smooth LEDs switching
+//#define FADE_LEDS
+
+// Brightness of each channel (0 - PWM_MAX_VALUE)
+#define LED1_MAX	PWM_MAX_VALUE
+#define LED2_MAX	PWM_MAX_VALUE
+#define LED3_MAX	PWM_MAX_VALUE
+#define LED4_MAX	PWM_MAX_VALUE
+
+#define PWM_MAX_VALUE	100
+
 #define LED1	PB3
 #define LED2	PB4
 #define LED3	PB1
@@ -54,12 +66,17 @@
 // Reference 1.1V, left-adjust for ADC1/PB2; enable; start; auto; interrupt; clk/128
 #define adcinit() do { ADMUX = 0b01100000 | ADC_CH; ADCSRA = 0b11101111; } while (0)
 // Set level on pin
-#define set_out(val, pin) val ? (PORTB |= (1 << pin)) : (PORTB &= ~(1 << pin))
+#define set_high(pin) PORTB |= (1 << pin)
+#define set_low_all() PORTB &= ~((1 << LED4) | (1 << LED3) | (1 << LED1) | (1 << LED2))
 
 volatile uint8_t blink_counter = 0;
+volatile uint8_t led1_brightness = 0;
+volatile uint8_t led2_brightness = 0;
+volatile uint8_t led3_brightness = 0;
+volatile uint8_t led4_brightness = 0;
 volatile uint8_t current_state = STATE_HIGH;
 
-ISR(ADC_vect) {	
+static void check_state() {
 	if (current_state == STATE_HIGH && ADCH <= UHI) current_state = STATE_100;
 	if (current_state == STATE_100 && ADCH <= U100) current_state = STATE_75;
 	if (current_state == STATE_75 && ADCH <= U75) current_state = STATE_50;
@@ -71,20 +88,51 @@ ISR(ADC_vect) {
 	if (current_state == STATE_50 && ADCH >= U75 + UHYS) current_state = STATE_75;
 	if (current_state == STATE_75 && ADCH >= U100 + UHYS) current_state = STATE_100;
 	if (current_state == STATE_100 && ADCH >= UHI + UHYS) current_state = STATE_HIGH;
-	
+}
+
+static void recalculate_brightness() {
 	#ifdef USE_ALL_LEDS
-		set_out((current_state == STATE_HIGH ? (blink_counter >> 7) : current_state == STATE_100), LED4);
-		set_out(current_state >= STATE_75, LED3);
-		set_out(current_state >= STATE_50, LED2);
-		set_out((current_state == STATE_LOW ? (blink_counter >> 7) : current_state >= STATE_25), LED1);
+		#ifdef FADE_LEDS
+			led1_brightness += (current_state == STATE_LOW ? (blink_counter >> 7) : current_state >= STATE_25) ? (led1_brightness < LED1_MAX ? 1 : 0) : (led1_brightness > 0 ? -1 : 0);
+			led2_brightness += (current_state >= STATE_50) ? (led2_brightness < LED2_MAX ? 1 : 0) : (led2_brightness > 0 ? -1 : 0);
+			led3_brightness += (current_state >= STATE_75) ? (led3_brightness < LED3_MAX ? 1 : 0) : (led3_brightness > 0 ? -1 : 0);
+			led4_brightness += (current_state == STATE_HIGH ? (blink_counter >> 7) : current_state == STATE_100) ? (led4_brightness < LED4_MAX ? 1 : 0) : (led4_brightness > 0 ? -1 : 0);
+		#else
+			led1_brightness = (current_state == STATE_LOW ? (blink_counter >> 7) : current_state >= STATE_25) ? LED1_MAX : 0;
+			led2_brightness = (current_state >= STATE_50) ? LED2_MAX : 0;
+			led3_brightness = (current_state >= STATE_75) ? LED3_MAX : 0;
+			led4_brightness = (current_state == STATE_HIGH ? (blink_counter >> 7) : current_state == STATE_100) ? LED4_MAX : 0;
+		#endif
 	#else
-		set_out((current_state == STATE_HIGH ? (blink_counter >> 7) : current_state == STATE_100), LED4);
-		set_out(current_state == STATE_75, LED3);
-		set_out(current_state == STATE_50, LED2);
-		set_out((current_state == STATE_LOW ? (blink_counter >> 7) : current_state == STATE_25), LED1);
+		#ifdef FADE_LEDS
+			led1_brightness += (current_state == STATE_LOW ? (blink_counter >> 7) : current_state == STATE_25) ? (led1_brightness < LED1_MAX ? 1 : 0) : (led1_brightness > 0 ? -1 : 0);
+			led2_brightness += (current_state == STATE_50) ? (led2_brightness < LED2_MAX ? 1 : 0) : (led2_brightness > 0 ? -1 : 0);
+			led3_brightness += (current_state == STATE_75) ? (led3_brightness < LED3_MAX ? 1 : 0) : (led3_brightness > 0 ? -1 : 0);
+			led4_brightness += (current_state == STATE_HIGH ? (blink_counter >> 7) : current_state == STATE_100) ? (led4_brightness < LED4_MAX ? 1 : 0) : (led4_brightness > 0 ? -1 : 0);
+		#else
+			led1_brightness = (current_state == STATE_LOW ? (blink_counter >> 7) : current_state == STATE_25) ? LED1_MAX : 0;
+			led2_brightness = (current_state == STATE_50) ? LED2_MAX : 0;
+			led3_brightness = (current_state == STATE_75) ? LED3_MAX : 0;
+			led4_brightness = (current_state == STATE_HIGH ? (blink_counter >> 7) : current_state == STATE_100) ? LED4_MAX : 0;
+		#endif
 	#endif
-	
 	blink_counter++;
+}
+
+static void do_pwm() {
+	for (uint8_t i = PWM_MAX_VALUE; i > 0; i--) {
+		if (i == led1_brightness) set_high(LED1);
+		if (i == led2_brightness) set_high(LED2);
+		if (i == led3_brightness) set_high(LED3);
+		if (i == led4_brightness) set_high(LED4);
+	}
+	set_low_all();
+}
+
+ISR(ADC_vect) {	
+	check_state();
+	recalculate_brightness();
+	do_pwm();
 }
 
 int main(void) {

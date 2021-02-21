@@ -6,7 +6,8 @@
 
 * 100% (> 3.9V), 75% (> 3.7V), 50% (> 3.5V), 25% (> 3.3V) indication
 * Overvoltage (> 4.25V) and low voltage (< 3.3V) indication
-* Two indication modes
+* Two indication modes with optional fade animation
+* Adjustable brightness of each channel
 * Input voltage: 2.7V to 5V
 
 # Showcase
